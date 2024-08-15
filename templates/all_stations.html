@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Helicorder Plots</title>
+    <link rel="stylesheet" href="static/css/styles.css">
+</head>
+<body>
+    <h1>All Helicorder Plots</h1>
+    
+    <p><a href="map_view.html">View Stations Map</a></p>
+
+    <p>Total Stations: {{ plots|length }}</p>
+
+    <ul id="station-list">
+    {% for plot in plots %}
+        <li>
+            <a href="{{ plot.id }}.html">
+                <img src="{{ plot.thumbnail }}" alt="{{ plot.id }} Thumbnail" class="thumbnail">
+                <h3>{{ plot.id }}</h3>
+                <p>{{ plot.network }}.{{ plot.station }}.{{ plot.location }}.{{ plot.channel }}</p>
+                <p>{{ plot.starttime|truncate(16, True, '') }} to {{ plot.endtime|truncate(16, True, '') }}</p>
+            </a>
+        </li>
+    {% endfor %}
+    </ul>
+</body>
+</html>

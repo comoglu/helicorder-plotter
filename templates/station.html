@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ plot.id }} - Helicorder Plot</title>
+    <link rel="stylesheet" href="static/css/styles.css">
+</head>
+<body>
+    <p><a href="index.html">Back to All Stations</a></p>
+
+    <h1>{{ plot.id }} - Helicorder Plot</h1>
+
+    <div id="plot-container">
+        <img src="{{ plot.filename }}" alt="{{ plot.id }}">
+    </div>
+
+    <div class="details">
+        <p><strong>Network:</strong> {{ plot.network }}</p>
+        <p><strong>Station:</strong> {{ plot.station }}</p>
+        <p><strong>Location:</strong> {{ plot.location }}</p>
+        <p><strong>Channel:</strong> {{ plot.channel }}</p>
+        <p><strong>Start Time:</strong> {{ plot.starttime }}</p>
+        <p><strong>End Time:</strong> {{ plot.endtime }}</p>
+    </div>
+
+    <p><a href="index.html">Back to All Stations</a></p>
+</body>
+</html>
