@@ -1,19 +1,21 @@
-import obspy
-from obspy import UTCDateTime
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from PIL import Image
 import os
 import logging
 import traceback
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from PIL import Image
+from obspy import UTCDateTime
+
 from .data_fetcher import get_waveforms
 
+
 def create_helicorder(st, output_file, thumbnail_file, starttime, endtime, events):
+    fig = Figure(figsize=(10, 7))
     try:
-        fig = plt.figure(figsize=(10, 7))  # Adjust size as needed
-        
         st.plot(type="dayplot", interval=60, right_vertical_labels=False,
                 vertical_scaling_range=5e3, one_tick_per_line=True,
                 color=['k', 'r', 'b', 'g'], show_y_UTC_label=True,
@@ -35,32 +37,39 @@ def create_helicorder(st, output_file, thumbnail_file, starttime, endtime, event
                  f"UTC: {starttime.strftime('%Y-%m-%d %H:%M:%S')} to {endtime.strftime('%Y-%m-%d %H:%M:%S')}")
         fig.suptitle(title, fontsize=10, y=1.02)
         fig.savefig(output_file, dpi=300, bbox_inches='tight')
-        
-        # Create thumbnail
+
         img = Image.open(output_file)
-        img.thumbnail((200, 200))  # Adjust size to match CSS
+        img.thumbnail((200, 200))
         img.save(thumbnail_file)
-        
-        plt.close(fig)
+
         return True
     except Exception as e:
-        logging.error(f"Error creating helicorder plot for {output_file}: {str(e)}")
+        logging.error(f"Error creating helicorder plot for {output_file}: {e}")
         logging.error(traceback.format_exc())
         return False
+    finally:
+        plt.close(fig)
+
+
+def _make_plot_id(network, station, location, channel):
+    loc = location if location else "--"
+    return f"{network}.{station}.{loc}.{channel}"
+
 
 def process_station(base_url, station_info, output_dir, starttime, endtime, events):
     network = station_info['network']
     station = station_info['station']
     location = station_info['location']
     channel = station_info['stream']
-    
+
     st = get_waveforms(base_url, network, station, location, channel, starttime, endtime)
     if st is not None and len(st) > 0:
-        output_file = os.path.join(output_dir, f"{network}.{station}.{location}.{channel}.png")
-        thumbnail_file = os.path.join(output_dir, f"{network}.{station}.{location}.{channel}_thumb.png")
+        plot_id = _make_plot_id(network, station, location, channel)
+        output_file = os.path.join(output_dir, f"{plot_id}.png")
+        thumbnail_file = os.path.join(output_dir, f"{plot_id}_thumb.png")
         if create_helicorder(st, output_file, thumbnail_file, starttime, endtime, events):
             return {
-                'id': f"{network}.{station}.{location}.{channel}",
+                'id': plot_id,
                 'network': network,
                 'station': station,
                 'location': location if location else "--",
@@ -72,15 +81,18 @@ def process_station(base_url, station_info, output_dir, starttime, endtime, even
             }
     return None
 
-def process_stations(base_url, stations, output_dir, events):
+
+def process_stations(base_url, stations, output_dir, events, max_workers=10):
     now = UTCDateTime.now()
     endtime = now
     starttime = endtime.replace(minute=0, second=0, microsecond=0) - 24 * 3600
 
     plots = []
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        future_to_station = {executor.submit(process_station, base_url, station_info, output_dir, starttime, endtime, events): station_id
-                             for station_id, station_info in stations.items()}
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        future_to_station = {
+            executor.submit(process_station, base_url, station_info, output_dir, starttime, endtime, events): station_id
+            for station_id, station_info in stations.items()
+        }
         for future in as_completed(future_to_station):
             station_id = future_to_station[future]
             try:
@@ -91,7 +103,7 @@ def process_stations(base_url, stations, output_dir, events):
                 else:
                     logging.warning(f"Failed to process {station_id}")
             except Exception as e:
-                logging.error(f"Error processing {station_id}: {str(e)}")
+                logging.error(f"Error processing {station_id}: {e}")
                 logging.error(traceback.format_exc())
-    
+
     return plots

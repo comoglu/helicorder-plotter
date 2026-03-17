@@ -1,12 +1,15 @@
-import requests
 import configparser
-import logging
-import requests
-from obspy import UTCDateTime
-import obspy
 import json
-import os
 import io
+import logging
+import os
+
+import requests
+import obspy
+from obspy import UTCDateTime
+
+REQUEST_TIMEOUT = 30
+
 
 def read_station_config(config_file):
     config = configparser.ConfigParser()
@@ -18,13 +21,22 @@ def read_station_config(config_file):
         'location': config[section]['deteclocid']
     } for section in config.sections()}
 
-def fetch_earthquake_events(starttime=None, endtime=None, min_magnitude=5.5):
+
+def validate_config(config):
+    required_keys = ['network', 'station', 'stream', 'location']
+    for station, station_config in config.items():
+        for key in required_keys:
+            if key not in station_config:
+                raise ValueError(f"Missing required key '{key}' for station {station}")
+    logging.info("Configuration validated successfully.")
+
+
+def fetch_earthquake_events(event_service_url, starttime=None, endtime=None, min_magnitude=5.5):
     if starttime is None:
-        starttime = UTCDateTime.now() - 24 * 3600  # 24 hours ago
+        starttime = UTCDateTime.now() - 24 * 3600
     if endtime is None:
         endtime = UTCDateTime.now()
 
-    base_url = "http://service.iris.edu/fdsnws/event/1/query"
     params = {
         "starttime": starttime.strftime("%Y-%m-%dT%H:%M:%S"),
         "endtime": endtime.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -32,7 +44,7 @@ def fetch_earthquake_events(starttime=None, endtime=None, min_magnitude=5.5):
         "format": "text"
     }
     try:
-        response = requests.get(base_url, params=params)
+        response = requests.get(event_service_url, params=params, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return [{
             "time": UTCDateTime(parts[1]),
@@ -43,13 +55,14 @@ def fetch_earthquake_events(starttime=None, endtime=None, min_magnitude=5.5):
             "description": parts[12].strip()
         } for parts in (line.split('|') for line in response.text.split('\n')[1:] if line.strip())]
     except requests.RequestException as e:
-        logging.error(f"Error fetching earthquake events: {str(e)}")
+        logging.error(f"Error fetching earthquake events: {e}")
         return []
+
 
 def fetch_station_info(base_url, network, station):
     query_url = f"{base_url}/fdsnws/station/1/query?network={network}&station={station}&level=station&format=text"
     try:
-        response = requests.get(query_url)
+        response = requests.get(query_url, timeout=REQUEST_TIMEOUT)
         if response.status_code == 200:
             lines = response.text.strip().split('\n')
             if len(lines) > 1:
@@ -61,8 +74,9 @@ def fetch_station_info(base_url, network, station):
                 }
         return None
     except Exception as e:
-        logging.error(f"Error fetching station info for {network}.{station}: {str(e)}")
+        logging.error(f"Error fetching station info for {network}.{station}: {e}")
         return None
+
 
 def generate_station_data_json(base_url, stations, output_dir):
     station_data = []
@@ -83,9 +97,10 @@ def generate_station_data_json(base_url, stations, output_dir):
                 'longitude': location_info['longitude'],
                 'elevation': location_info['elevation']
             })
-    
+
     with open(os.path.join(output_dir, 'station_data.json'), 'w') as f:
         json.dump(station_data, f)
+
 
 def get_waveforms(base_url, network, station, location, channel, starttime, endtime):
     query_url = (f"{base_url}/fdsnws/dataselect/1/query"
@@ -93,7 +108,7 @@ def get_waveforms(base_url, network, station, location, channel, starttime, endt
                  f"&starttime={starttime.strftime('%Y-%m-%dT%H:%M:%S')}"
                  f"&endtime={endtime.strftime('%Y-%m-%dT%H:%M:%S')}")
     try:
-        response = requests.get(query_url)
+        response = requests.get(query_url, timeout=REQUEST_TIMEOUT)
         if response.status_code == 200:
             return obspy.read(io.BytesIO(response.content))
         elif response.status_code == 204:
@@ -102,5 +117,5 @@ def get_waveforms(base_url, network, station, location, channel, starttime, endt
             logging.error(f"Error fetching waveforms. Status code: {response.status_code}")
         return None
     except Exception as e:
-        logging.error(f"Error fetching waveforms for {network}.{station}.{location}.{channel}: {str(e)}")
+        logging.error(f"Error fetching waveforms for {network}.{station}.{location}.{channel}: {e}")
         return None
